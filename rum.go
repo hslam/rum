@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"sync"
-	"sync/atomic"
 )
 
 // DefaultServer is the default HTTP server.
@@ -22,12 +21,12 @@ var DefaultServer = New()
 // Rum is an HTTP server.
 type Rum struct {
 	*mux.Mux
-	handler  http.Handler
-	fast     bool
-	poll     bool
-	listener net.Listener
-	poller   *netpoll.Server
-	closed   int32
+	handler   http.Handler
+	fast      bool
+	poll      bool
+	mut       sync.Mutex
+	listeners []net.Listener
+	pollers   []*netpoll.Server
 }
 
 // New returns a new Rum instance.
@@ -118,12 +117,17 @@ func (m *Rum) Serve(l net.Listener) error {
 				return nil
 			})
 		}
-		m.poller = &netpoll.Server{
+		poller := &netpoll.Server{
 			Handler: h,
 		}
-		return m.poller.Serve(l)
+		m.mut.Lock()
+		m.pollers = append(m.pollers, poller)
+		m.mut.Unlock()
+		return poller.Serve(l)
 	}
-	m.listener = l
+	m.mut.Lock()
+	m.listeners = append(m.listeners, l)
+	m.mut.Unlock()
 	if m.fast {
 		for {
 			conn, err := l.Accept()
@@ -145,13 +149,18 @@ func (m *Rum) Serve(l net.Listener) error {
 
 // Close closes the HTTP server.
 func (m *Rum) Close() error {
-	if !atomic.CompareAndSwapInt32(&m.closed, 0, 1) {
-		return nil
+	m.mut.Lock()
+	defer m.mut.Unlock()
+	for _, lis := range m.listeners {
+		lis.Close()
 	}
-	if m.poller != nil {
-		return m.poller.Close()
+	m.listeners = []net.Listener{}
+	for _, poller := range m.pollers {
+		poller.Close()
 	}
-	return m.listener.Close()
+	m.pollers = []*netpoll.Server{}
+	m.handler = nil
+	return nil
 }
 
 func (m *Rum) serveConn(conn net.Conn) {
@@ -216,10 +225,7 @@ func ListenAndServeFast(addr string, handler http.Handler) error {
 }
 
 func listenAndServe(addr string, handler http.Handler, fast bool) error {
-	if handler == nil {
-		handler = DefaultServer
-	}
-	rum := New()
+	rum := DefaultServer
 	rum.handler = handler
 	rum.SetFast(fast)
 	return rum.Run(addr)
@@ -236,10 +242,7 @@ func ListenAndServePollFast(addr string, handler http.Handler) error {
 }
 
 func listenAndServePoll(addr string, handler http.Handler, fast bool) error {
-	if handler == nil {
-		handler = DefaultServer
-	}
-	rum := New()
+	rum := DefaultServer
 	rum.handler = handler
 	rum.SetFast(fast)
 	rum.SetPoll(true)
