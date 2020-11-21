@@ -13,18 +13,21 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 )
 
-// NewServeMux allocates and returns a new Mux.
-func NewServeMux() *Rum { return New() }
-
-// DefaultServeMux is the default Mux used by ListenAndServe.
-var DefaultServeMux = New()
+// DefaultServer is the default HTTP server.
+var DefaultServer = New()
 
 // Rum is an HTTP server.
 type Rum struct {
 	*mux.Mux
-	fast bool
+	handler  http.Handler
+	fast     bool
+	poll     bool
+	listener net.Listener
+	poller   *netpoll.Server
+	closed   int32
 }
 
 // New returns a new Rum instance.
@@ -32,9 +35,14 @@ func New() *Rum {
 	return &Rum{Mux: mux.New()}
 }
 
-// NewFast returns a new Rum instance but with the simple request parser.
-func NewFast() *Rum {
-	return &Rum{Mux: mux.New(), fast: true}
+// SetFast enables the Server to use simple request parser.
+func (m *Rum) SetFast(fast bool) {
+	m.fast = fast
+}
+
+// SetPoll enables the Server to use netpoll based on epoll/kqueue.
+func (m *Rum) SetPoll(poll bool) {
+	m.poll = poll
 }
 
 // Run listens on the TCP network address addr and then calls
@@ -43,12 +51,152 @@ func NewFast() *Rum {
 //
 // Run always returns a non-nil error.
 func (m *Rum) Run(addr string) error {
-	return listenAndServe(addr, m, m.fast)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return m.Serve(ln)
 }
 
-// RunPoll is like Run but based on epoll/kqueue.
-func (m *Rum) RunPoll(addr string) error {
-	return listenAndServePoll(addr, m, m.fast)
+// Serve accepts incoming connections on the Listener l, creating a
+// new service goroutine for each, or registering the conn fd to poll
+// that will trigger the fd to read requests and then call handler
+// to reply to them.
+func (m *Rum) Serve(l net.Listener) error {
+	if m.poll {
+		var handler = m.handler
+		if handler == nil {
+			handler = m
+		}
+		var h = &netpoll.ConnHandler{}
+		type Context struct {
+			reader  *bufio.Reader
+			rw      *bufio.ReadWriter
+			conn    net.Conn
+			serving sync.Mutex
+		}
+		h.SetUpgrade(func(conn net.Conn) (netpoll.Context, error) {
+			reader := bufio.NewReader(conn)
+			rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
+			return &Context{reader: reader, conn: conn, rw: rw}, nil
+		})
+		if m.fast {
+			h.SetServe(func(context netpoll.Context) error {
+				ctx := context.(*Context)
+				var err error
+				var req *http.Request
+				ctx.serving.Lock()
+				req, err = request.ReadFastRequest(ctx.reader)
+				if err != nil {
+					ctx.serving.Unlock()
+					return err
+				}
+				res := response.NewResponse(req, ctx.conn, ctx.rw)
+				handler.ServeHTTP(res, req)
+				res.FinishRequest()
+				ctx.serving.Unlock()
+				request.FreeRequest(req)
+				response.FreeResponse(res)
+				return nil
+			})
+		} else {
+			h.SetServe(func(context netpoll.Context) error {
+				ctx := context.(*Context)
+				var err error
+				var req *http.Request
+				ctx.serving.Lock()
+				req, err = http.ReadRequest(ctx.reader)
+				if err != nil {
+					ctx.serving.Unlock()
+					return err
+				}
+				res := response.NewResponse(req, ctx.conn, ctx.rw)
+				handler.ServeHTTP(res, req)
+				res.FinishRequest()
+				ctx.serving.Unlock()
+				response.FreeResponse(res)
+				return nil
+			})
+		}
+		m.poller = &netpoll.Server{
+			Handler: h,
+		}
+		return m.poller.Serve(l)
+	}
+	m.listener = l
+	if m.fast {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return err
+			}
+			go m.serveFastConn(conn)
+		}
+	} else {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return err
+			}
+			go m.serveConn(conn)
+		}
+	}
+}
+
+// Close closes the HTTP server.
+func (m *Rum) Close() error {
+	if !atomic.CompareAndSwapInt32(&m.closed, 0, 1) {
+		return nil
+	}
+	if m.poller != nil {
+		return m.poller.Close()
+	}
+	return m.listener.Close()
+}
+
+func (m *Rum) serveConn(conn net.Conn) {
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
+	var err error
+	var req *http.Request
+	var handler = m.handler
+	if handler == nil {
+		handler = m
+	}
+	for {
+		req, err = http.ReadRequest(reader)
+		if err != nil {
+			break
+		}
+		res := response.NewResponse(req, conn, rw)
+		handler.ServeHTTP(res, req)
+		res.FinishRequest()
+		response.FreeResponse(res)
+	}
+}
+
+func (m *Rum) serveFastConn(conn net.Conn) {
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
+	var err error
+	var req *http.Request
+	var handler = m.handler
+	if handler == nil {
+		handler = m
+	}
+	for {
+		req, err = request.ReadFastRequest(reader)
+		if err != nil {
+			break
+		}
+		res := response.NewResponse(req, conn, rw)
+		handler.ServeHTTP(res, req)
+		res.FinishRequest()
+		request.FreeRequest(req)
+		response.FreeResponse(res)
+	}
 }
 
 // ListenAndServe listens on the TCP network address addr and then calls
@@ -69,60 +217,12 @@ func ListenAndServeFast(addr string, handler http.Handler) error {
 
 func listenAndServe(addr string, handler http.Handler, fast bool) error {
 	if handler == nil {
-		handler = DefaultServeMux
+		handler = DefaultServer
 	}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
-	if fast {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return err
-			}
-			go func(conn net.Conn) {
-				reader := bufio.NewReader(conn)
-				rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
-				var err error
-				var req *http.Request
-				for {
-					req, err = request.ReadFastRequest(reader)
-					if err != nil {
-						break
-					}
-					res := response.NewResponse(req, conn, rw)
-					handler.ServeHTTP(res, req)
-					res.FinishRequest()
-					request.FreeRequest(req)
-					response.FreeResponse(res)
-				}
-			}(conn)
-		}
-	} else {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return err
-			}
-			go func(conn net.Conn) {
-				reader := bufio.NewReader(conn)
-				rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
-				var err error
-				var req *http.Request
-				for {
-					req, err = http.ReadRequest(reader)
-					if err != nil {
-						break
-					}
-					res := response.NewResponse(req, conn, rw)
-					handler.ServeHTTP(res, req)
-					res.FinishRequest()
-					response.FreeResponse(res)
-				}
-			}(conn)
-		}
-	}
+	rum := New()
+	rum.handler = handler
+	rum.SetFast(fast)
+	return rum.Run(addr)
 }
 
 // ListenAndServePoll is like ListenAndServe but based on epoll/kqueue.
@@ -137,57 +237,11 @@ func ListenAndServePollFast(addr string, handler http.Handler) error {
 
 func listenAndServePoll(addr string, handler http.Handler, fast bool) error {
 	if handler == nil {
-		handler = DefaultServeMux
+		handler = DefaultServer
 	}
-	var h = &netpoll.ConnHandler{}
-	type Context struct {
-		reader  *bufio.Reader
-		rw      *bufio.ReadWriter
-		conn    net.Conn
-		serving sync.Mutex
-	}
-	h.SetUpgrade(func(conn net.Conn) (netpoll.Context, error) {
-		reader := bufio.NewReader(conn)
-		rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
-		return &Context{reader: reader, conn: conn, rw: rw}, nil
-	})
-	if fast {
-		h.SetServe(func(context netpoll.Context) error {
-			ctx := context.(*Context)
-			var err error
-			var req *http.Request
-			ctx.serving.Lock()
-			req, err = request.ReadFastRequest(ctx.reader)
-			if err != nil {
-				ctx.serving.Unlock()
-				return err
-			}
-			res := response.NewResponse(req, ctx.conn, ctx.rw)
-			handler.ServeHTTP(res, req)
-			res.FinishRequest()
-			ctx.serving.Unlock()
-			request.FreeRequest(req)
-			response.FreeResponse(res)
-			return nil
-		})
-	} else {
-		h.SetServe(func(context netpoll.Context) error {
-			ctx := context.(*Context)
-			var err error
-			var req *http.Request
-			ctx.serving.Lock()
-			req, err = http.ReadRequest(ctx.reader)
-			if err != nil {
-				ctx.serving.Unlock()
-				return err
-			}
-			res := response.NewResponse(req, ctx.conn, ctx.rw)
-			handler.ServeHTTP(res, req)
-			res.FinishRequest()
-			ctx.serving.Unlock()
-			response.FreeResponse(res)
-			return nil
-		})
-	}
-	return netpoll.ListenAndServe("tcp", addr, h)
+	rum := New()
+	rum.handler = handler
+	rum.SetFast(fast)
+	rum.SetPoll(true)
+	return rum.Run(addr)
 }

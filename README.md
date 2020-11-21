@@ -40,7 +40,8 @@ import (
 )
 
 func main() {
-	m := rum.NewFast()
+	m := rum.New()
+	m.SetFast(true)
 	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World"))
 	})
@@ -59,10 +60,11 @@ import (
 
 func main() {
 	m := rum.New()
+	m.SetPoll(true)
 	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World"))
 	})
-	m.RunPoll(":8080")
+	m.Run(":8080")
 }
 ```
 
@@ -76,11 +78,13 @@ import (
 )
 
 func main() {
-	m := rum.NewFast()
+	m := rum.New()
+	m.SetFast(true)
+	m.SetPoll(true)
 	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World"))
 	})
-	m.RunPoll(":8080")
+	m.Run(":8080")
 }
 ```
 
