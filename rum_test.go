@@ -98,3 +98,90 @@ func TestFastRumPoll(t *testing.T) {
 	m.Close()
 	<-done
 }
+
+func TestListenAndServe(t *testing.T) {
+	addr := ":8080"
+	m := New()
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
+	done := make(chan struct{})
+	go func() {
+		ListenAndServe(addr, m)
+		close(done)
+	}()
+	time.Sleep(time.Millisecond * 10)
+	testHTTP("GET", "http://"+addr+"/", http.StatusOK, "Hello World", t)
+	DefaultServer.Close()
+	<-done
+}
+
+func TestListenAndServeFast(t *testing.T) {
+	addr := ":8080"
+	m := New()
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
+	done := make(chan struct{})
+	go func() {
+		ListenAndServeFast(addr, m)
+		close(done)
+	}()
+	time.Sleep(time.Millisecond * 10)
+	testHTTP("GET", "http://"+addr+"/", http.StatusOK, "Hello World", t)
+	DefaultServer.Close()
+	<-done
+}
+
+func TestListenAndServePoll(t *testing.T) {
+	addr := ":8080"
+	m := New()
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
+	done := make(chan struct{})
+	go func() {
+		ListenAndServePoll(addr, m)
+		close(done)
+	}()
+	time.Sleep(time.Millisecond * 10)
+	testHTTP("GET", "http://"+addr+"/", http.StatusOK, "Hello World", t)
+	DefaultServer.Close()
+	<-done
+}
+
+func TestListenAndServePollFast(t *testing.T) {
+	addr := ":8080"
+	m := New()
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
+	done := make(chan struct{})
+	go func() {
+		ListenAndServePollFast(addr, m)
+		close(done)
+	}()
+	time.Sleep(time.Millisecond * 10)
+	testHTTP("GET", "http://"+addr+"/", http.StatusOK, "Hello World", t)
+	DefaultServer.Close()
+	<-done
+}
+
+func TestRun(t *testing.T) {
+	addr := ":8080"
+	m := New()
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
+	done := make(chan struct{})
+	go func() {
+		m.Run(addr)
+		close(done)
+	}()
+	time.Sleep(time.Millisecond * 10)
+	if err := m.Run(addr); err == nil {
+		t.Error(err)
+	}
+	m.Close()
+	<-done
+}
