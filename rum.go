@@ -6,7 +6,6 @@ package rum
 
 import (
 	"bufio"
-	"github.com/hslam/mux"
 	"github.com/hslam/netpoll"
 	"github.com/hslam/request"
 	"github.com/hslam/response"
@@ -20,7 +19,7 @@ var DefaultServer = New()
 
 // Rum is an HTTP server.
 type Rum struct {
-	*mux.Mux
+	*Mux
 	Handler   http.Handler
 	fast      bool
 	poll      bool
@@ -31,7 +30,7 @@ type Rum struct {
 
 // New returns a new Rum instance.
 func New() *Rum {
-	return &Rum{Mux: mux.New()}
+	return &Rum{Mux: NewMux()}
 }
 
 // SetFast enables the Server to use simple request parser.
