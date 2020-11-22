@@ -21,7 +21,7 @@ var DefaultServer = New()
 // Rum is an HTTP server.
 type Rum struct {
 	*mux.Mux
-	handler   http.Handler
+	Handler   http.Handler
 	fast      bool
 	poll      bool
 	mut       sync.Mutex
@@ -63,7 +63,7 @@ func (m *Rum) Run(addr string) error {
 // to reply to them.
 func (m *Rum) Serve(l net.Listener) error {
 	if m.poll {
-		var handler = m.handler
+		var handler = m.Handler
 		if handler == nil {
 			handler = m
 		}
@@ -159,7 +159,7 @@ func (m *Rum) Close() error {
 		poller.Close()
 	}
 	m.pollers = []*netpoll.Server{}
-	m.handler = nil
+	m.Handler = nil
 	return nil
 }
 
@@ -169,7 +169,7 @@ func (m *Rum) serveConn(conn net.Conn) {
 	rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
 	var err error
 	var req *http.Request
-	var handler = m.handler
+	var handler = m.Handler
 	if handler == nil {
 		handler = m
 	}
@@ -191,7 +191,7 @@ func (m *Rum) serveFastConn(conn net.Conn) {
 	rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
 	var err error
 	var req *http.Request
-	var handler = m.handler
+	var handler = m.Handler
 	if handler == nil {
 		handler = m
 	}
@@ -226,7 +226,7 @@ func ListenAndServeFast(addr string, handler http.Handler) error {
 
 func listenAndServe(addr string, handler http.Handler, fast bool) error {
 	rum := DefaultServer
-	rum.handler = handler
+	rum.Handler = handler
 	rum.SetFast(fast)
 	return rum.Run(addr)
 }
@@ -243,7 +243,7 @@ func ListenAndServePollFast(addr string, handler http.Handler) error {
 
 func listenAndServePoll(addr string, handler http.Handler, fast bool) error {
 	rum := DefaultServer
-	rum.handler = handler
+	rum.Handler = handler
 	rum.SetFast(fast)
 	rum.SetPoll(true)
 	return rum.Run(addr)
