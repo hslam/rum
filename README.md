@@ -12,63 +12,25 @@ go get github.com/hslam/rum
 import "github.com/hslam/rum"
 ```
 ### Usage
+#### Simple Example
+```go
+package main
+
+import (
+	"github.com/hslam/rum"
+	"net/http"
+)
+
+func main() {
+	m := rum.New()
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
+	m.Run(":8080")
+}
+```
+
 #### Example
-```go
-package main
-
-import (
-	"github.com/hslam/rum"
-	"net/http"
-)
-
-func main() {
-	m := rum.New()
-	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World"))
-	})
-	m.Run(":8080")
-}
-```
-
-#### Fast Example
-```go
-package main
-
-import (
-	"github.com/hslam/rum"
-	"net/http"
-)
-
-func main() {
-	m := rum.New()
-	m.SetFast(true)
-	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World"))
-	})
-	m.Run(":8080")
-}
-```
-
-#### Netpoll Example
-```go
-package main
-
-import (
-	"github.com/hslam/rum"
-	"net/http"
-)
-
-func main() {
-	m := rum.New()
-	m.SetPoll(true)
-	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World"))
-	})
-	m.Run(":8080")
-}
-```
-
-#### Netpoll Fast Example
 ```go
 package main
 
