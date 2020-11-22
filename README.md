@@ -11,6 +11,7 @@ go get github.com/hslam/rum
 ```
 import "github.com/hslam/rum"
 ```
+
 ### Usage
 #### Simple Example
 ```go
@@ -30,6 +31,11 @@ func main() {
 }
 ```
 
+curl http://localhost:8080
+```
+Hello World
+```
+
 #### Example
 ```go
 package main
@@ -43,16 +49,46 @@ func main() {
 	m := rum.New()
 	m.SetFast(true)
 	m.SetPoll(true)
+	m.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Not Found : "+r.URL.String(), http.StatusNotFound)
+	})
+	m.Use(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	})
 	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World"))
+	})
+	m.HandleFunc("/hello/:name", func(w http.ResponseWriter, r *http.Request) {
+		params := m.Params(r)
+		w.Write([]byte("Hello " + params["name"]))
+	}).GET()
+	m.Group("/group", func(m *rum.Mux) {
+		m.HandleFunc("/foo/:id", func(w http.ResponseWriter, r *http.Request) {
+			params := m.Params(r)
+			w.Write([]byte("group/foo id:" + params["id"]))
+		}).GET()
+		m.HandleFunc("/bar/:id", func(w http.ResponseWriter, r *http.Request) {
+			params := m.Params(r)
+			w.Write([]byte("group/bar id:" + params["id"]))
+		}).GET()
 	})
 	m.Run(":8080")
 }
 ```
 
-curl -XGET http://localhost:8080
+curl http://localhost:8080/hello/rum
 ```
-Hello World
+Hello rum
+```
+
+curl http://localhost:8080/group/foo/1
+```
+group/foo id:1
+```
+
+curl http://localhost:8080/group/bar/2
+```
+group/bar id:2
 ```
 
 ### License
