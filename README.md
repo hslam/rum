@@ -91,6 +91,27 @@ curl http://localhost:8080/group/bar/2
 group/bar id:2
 ```
 
+#### Use Other Router Example
+The router must implement the http.Handler interface, for example using the http.ServeMux.
+```go
+package main
+
+import (
+	"github.com/hslam/rum"
+	"net/http"
+)
+
+func main() {
+	router := http.NewServeMux()
+	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
+	server := rum.New()
+	server.Handler = router
+	server.Run(":8080")
+}
+```
+
 ### License
 This package is licensed under a MIT license (Copyright (c) 2020 Meng Huang)
 
