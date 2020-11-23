@@ -1,6 +1,10 @@
 # rum
 Package rum implements an HTTP server. The rum server is compatible with net/http and faster than net/http.
 
+## [Benchmark](http://github.com/hslam/http-benchmark "http-benchmark")
+<img src="https://raw.githubusercontent.com/hslam/http-benchmark/master/http-qps.png" width = "400" height = "300" alt="qps" align=center><img src="https://raw.githubusercontent.com/hslam/http-benchmark/master/http-p99.png" width = "400" height = "300" alt="p99" align=center>
+
+
 ## Features
 * Fully compatible with the http.HandlerFunc interface.
 * Support other router that implements the http.Handler interface.
