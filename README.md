@@ -5,13 +5,12 @@ Package rum implements an HTTP server. The rum server is compatible with net/htt
 * Fully compatible with the http.HandlerFunc interface.
 * Support other router that implements the http.Handler interface.
 * [Epoll / Kqueue](https://github.com/hslam/netpoll "netpoll")
-* [HTTP request](https://github.com/hslam/request "request")
 * [HTTP response](https://github.com/hslam/request "response")
 * [HTTP request multiplexer](https://github.com/hslam/mux "mux")
 * [HTTP handler](https://github.com/hslam/handler "handler")
 
 ## [Benchmark](http://github.com/hslam/http-benchmark "http-benchmark")
-<img src="https://raw.githubusercontent.com/hslam/http-benchmark/master/http-qps.png" width = "400" height = "300" alt="qps" align=center><img src="https://raw.githubusercontent.com/hslam/http-benchmark/master/http-p99.png" width = "400" height = "300" alt="p99" align=center>
+<img src="https://raw.githubusercontent.com/hslam/http-benchmark/master/http-qps.png" width = "480" height = "360" alt="qps" align=center>
 
 ## Get started
 
@@ -59,7 +58,6 @@ import (
 
 func main() {
 	m := rum.New()
-	m.SetFast(true)
 	m.SetPoll(true)
 	m.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not Found : "+r.URL.String(), http.StatusNotFound)
