@@ -16,7 +16,7 @@ Package rum implements an HTTP server. The rum server is compatible with net/htt
 * [HTTP handler](https://github.com/hslam/handler "handler")
 
 ## [Benchmark](http://github.com/hslam/http-benchmark "http-benchmark")
-<img src="https://raw.githubusercontent.com/hslam/http-benchmark/master/http-qps.png" width = "480" height = "360" alt="qps" align=center>
+<img src="https://raw.githubusercontent.com/hslam/http-benchmark/master/http-qps.png" width = "400" height = "300" alt="qps" align=center><img src="https://raw.githubusercontent.com/hslam/http-benchmark/master/http-p99.png" width = "400" height = "300" alt="p99" align=center>
 
 ## Get started
 
