@@ -1,6 +1,6 @@
 # rum
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/hslam/rum)](https://pkg.go.dev/github.com/hslam/rum)
-[![Build Status](https://travis-ci.org/hslam/rum.svg?branch=master)](https://travis-ci.org/hslam/rum)
+[![Build Status](https://api.travis-ci.com/hslam/rum.svg?branch=master)](https://travis-ci.com/hslam/rum)
 [![codecov](https://codecov.io/gh/hslam/rum/branch/master/graph/badge.svg)](https://codecov.io/gh/hslam/rum)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hslam/rum)](https://goreportcard.com/report/github.com/hslam/rum)
 [![LICENSE](https://img.shields.io/github/license/hslam/rum.svg?style=flat-square)](https://github.com/hslam/rum/blob/master/LICENSE)
