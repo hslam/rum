@@ -11,7 +11,8 @@ Package rum implements an HTTP server. The rum server is compatible with net/htt
 * Fully compatible with the http.HandlerFunc interface.
 * Support other router that implements the http.Handler interface.
 * [Epoll / Kqueue](https://github.com/hslam/netpoll "netpoll")
-* [HTTP response](https://github.com/hslam/request "response")
+* [HTTP request](https://github.com/hslam/request "request")
+* [HTTP response](https://github.com/hslam/response "response")
 * [HTTP request multiplexer](https://github.com/hslam/mux "mux")
 * [HTTP handler](https://github.com/hslam/handler "handler")
 
