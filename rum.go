@@ -6,6 +6,7 @@ package rum
 
 import (
 	"bufio"
+	"crypto/tls"
 	"github.com/hslam/netpoll"
 	"github.com/hslam/request"
 	"github.com/hslam/response"
@@ -20,7 +21,15 @@ var DefaultServer = New()
 // Rum is an HTTP server.
 type Rum struct {
 	*Mux
-	Handler   http.Handler
+	Handler http.Handler
+	// TLSConfig optionally provides a TLS configuration for use
+	// by ServeTLS and ListenAndServeTLS. Note that this value is
+	// cloned by ServeTLS and ListenAndServeTLS, so it's not
+	// possible to modify the configuration with methods like
+	// tls.Config.SetSessionTicketKeys. To use
+	// SetSessionTicketKeys, use Server.Serve with a TLS Listener
+	// instead.
+	TLSConfig *tls.Config
 	fast      bool
 	poll      bool
 	mut       sync.Mutex
@@ -56,11 +65,57 @@ func (m *Rum) Run(addr string) error {
 	return m.Serve(ln)
 }
 
+// RunTLS is like Run but with a cert file and a key file.
+func (m *Rum) RunTLS(addr string, certFile, keyFile string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return m.ServeTLS(ln, certFile, keyFile)
+}
+
 // Serve accepts incoming connections on the Listener l, creating a
 // new service goroutine for each, or registering the conn fd to poll
 // that will trigger the fd to read requests and then call handler
 // to reply to them.
 func (m *Rum) Serve(l net.Listener) error {
+	return m.serve(l, m.TLSConfig)
+}
+
+// ServeTLS accepts incoming connections on the Listener l, creating a
+// new service goroutine for each. The service goroutines perform TLS
+// setup and then read requests, calling srv.Handler to reply to them.
+//
+// Files containing a certificate and matching private key for the
+// server must be provided if neither the Server's
+// TLSConfig.Certificates nor TLSConfig.GetCertificate are populated.
+// If the certificate is signed by a certificate authority, the
+// certFile should be the concatenation of the server's certificate,
+// any intermediates, and the CA's certificate.
+//
+// ServeTLS always returns a non-nil error. After Shutdown or Close, the
+// returned error is ErrServerClosed.
+func (m *Rum) ServeTLS(l net.Listener, certFile, keyFile string) error {
+	config := m.TLSConfig
+	if config == nil {
+		config = &tls.Config{}
+	}
+	if !strSliceContains(config.NextProtos, "http/1.1") {
+		config.NextProtos = append(config.NextProtos, "http/1.1")
+	}
+	configHasCert := len(config.Certificates) > 0 || config.GetCertificate != nil
+	if !configHasCert || certFile != "" || keyFile != "" {
+		var err error
+		config.Certificates = make([]tls.Certificate, 1)
+		config.Certificates[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return err
+		}
+	}
+	return m.serve(l, config)
+}
+
+func (m *Rum) serve(l net.Listener, config *tls.Config) error {
 	if m.poll {
 		var handler = m.Handler
 		if handler == nil {
@@ -74,6 +129,14 @@ func (m *Rum) Serve(l net.Listener) error {
 			serving sync.Mutex
 		}
 		h.SetUpgrade(func(conn net.Conn) (netpoll.Context, error) {
+			if config != nil {
+				tlsConn := tls.Server(conn, config)
+				if err := tlsConn.Handshake(); err != nil {
+					conn.Close()
+					return nil, err
+				}
+				conn = tlsConn
+			}
 			reader := bufio.NewReader(conn)
 			rw := bufio.NewReadWriter(reader, bufio.NewWriter(conn))
 			return &Context{reader: reader, conn: conn, rw: rw}, nil
@@ -123,6 +186,9 @@ func (m *Rum) Serve(l net.Listener) error {
 		m.pollers = append(m.pollers, poller)
 		m.mut.Unlock()
 		return poller.Serve(l)
+	}
+	if config != nil {
+		l = tls.NewListener(l, config)
 	}
 	m.mut.Lock()
 	m.listeners = append(m.listeners, l)
@@ -215,35 +281,27 @@ func (m *Rum) serveFastConn(conn net.Conn) {
 //
 // ListenAndServe always returns a non-nil error.
 func ListenAndServe(addr string, handler http.Handler) error {
-	return listenAndServe(addr, handler, false)
-}
-
-// ListenAndServeFast is like ListenAndServe but with the simple request parser.
-func ListenAndServeFast(addr string, handler http.Handler) error {
-	return listenAndServe(addr, handler, true)
-}
-
-func listenAndServe(addr string, handler http.Handler, fast bool) error {
 	rum := DefaultServer
 	rum.Handler = handler
-	rum.SetFast(fast)
 	return rum.Run(addr)
 }
 
-// ListenAndServePoll is like ListenAndServe but based on epoll/kqueue.
-func ListenAndServePoll(addr string, handler http.Handler) error {
-	return listenAndServePoll(addr, handler, false)
-}
-
-// ListenAndServePollFast is like ListenAndServePoll but with the simple request parser.
-func ListenAndServePollFast(addr string, handler http.Handler) error {
-	return listenAndServePoll(addr, handler, true)
-}
-
-func listenAndServePoll(addr string, handler http.Handler, fast bool) error {
+// ListenAndServeTLS acts identically to ListenAndServe, except that it
+// expects HTTPS connections. Additionally, files containing a certificate and
+// matching private key for the server must be provided. If the certificate
+// is signed by a certificate authority, the certFile should be the concatenation
+// of the server's certificate, any intermediates, and the CA's certificate.
+func ListenAndServeTLS(addr, certFile, keyFile string, handler http.Handler) error {
 	rum := DefaultServer
 	rum.Handler = handler
-	rum.SetFast(fast)
-	rum.SetPoll(true)
-	return rum.Run(addr)
+	return rum.RunTLS(addr, certFile, keyFile)
+}
+
+func strSliceContains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
