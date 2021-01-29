@@ -110,6 +110,25 @@ func TestDefaultNotFound(t *testing.T) {
 	httpServer.Close()
 }
 
+func TestDefaultRecovery(t *testing.T) {
+	m := New()
+	m.Recovery(Recovery)
+	msg := "panic test"
+	m.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		panic(msg)
+		w.Write([]byte("hello world Method:GET\n"))
+	}).GET()
+	addr := ":8080"
+	httpServer := &http.Server{
+		Addr:    addr,
+		Handler: m,
+	}
+	l, _ := net.Listen("tcp", addr)
+	go httpServer.Serve(l)
+	testHTTP("GET", "http://"+addr+"/hello", http.StatusInternalServerError, "500 Internal Server Error : "+msg+"\n", t)
+	httpServer.Close()
+}
+
 func TestHandleFunc(t *testing.T) {
 	m := NewMux()
 	m.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {

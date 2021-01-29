@@ -66,6 +66,7 @@ import (
 func main() {
 	m := rum.New()
 	m.SetPoll(true)
+	m.Recovery(rum.Recovery)
 	m.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not Found : "+r.URL.String(), http.StatusNotFound)
 	})
