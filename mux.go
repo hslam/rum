@@ -30,11 +30,17 @@ var ErrGroupExisted = errors.New("Group Existed")
 // ErrParamsKeyEmpty is the error returned by HandleFunc when the params key is empty.
 var ErrParamsKeyEmpty = errors.New("Params key must be not empty")
 
-// ContextKey represents the context key.
-type ContextKey string
+// contextKey is a key for use with context.WithValue. It's used as
+// a pointer so it fits in an interface{} without allocation.
+type contextKey struct {
+	name string
+}
 
-// ContextKeyRecovery is the context key of recovery.
-const ContextKeyRecovery = ContextKey("mux:context:recovery")
+// String returns a context key.
+func (k *contextKey) String() string { return "github.com/hslam/rum context key " + k.name }
+
+// RecoveryContextKey is a context key.
+var RecoveryContextKey = &contextKey{"recovery"}
 
 // Mux is an HTTP request multiplexer.
 type Mux struct {
@@ -144,7 +150,7 @@ func (m *Mux) serveEntry(entry *Entry, w http.ResponseWriter, r *http.Request) {
 
 // Recovery returns a recovery handler function that recovers from any panics and writes a 500 status code.
 func Recovery(w http.ResponseWriter, r *http.Request) {
-	err := r.Context().Value(ContextKeyRecovery)
+	err := r.Context().Value(RecoveryContextKey)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusInternalServerError)
@@ -155,7 +161,7 @@ func (m *Mux) serveHandler(handler http.Handler, w http.ResponseWriter, r *http.
 	if m.recovery != nil {
 		defer func() {
 			if err := recover(); err != nil {
-				ctx := context.WithValue(r.Context(), ContextKeyRecovery, err)
+				ctx := context.WithValue(r.Context(), RecoveryContextKey, err)
 				m.recovery.ServeHTTP(w, r.WithContext(ctx))
 			}
 		}()

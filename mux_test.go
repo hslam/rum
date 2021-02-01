@@ -11,6 +11,12 @@ import (
 	"testing"
 )
 
+func TestContextKey(t *testing.T) {
+	if RecoveryContextKey.String() != fmt.Sprint(RecoveryContextKey) {
+		t.Error()
+	}
+}
+
 func TestParseMatch(t *testing.T) {
 	pattern := "/db/:key/meng/:value/huang"
 	i := strings.Index(pattern, ":")
