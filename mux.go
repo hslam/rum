@@ -69,8 +69,8 @@ type Entry struct {
 	params   map[string]string
 }
 
-// New returns a new Mux.
-func New() *Mux {
+// NewMux returns a new Mux.
+func NewMux() *Mux {
 	m := &Mux{
 		prefixes: make(map[string]*prefix),
 		groups:   make(map[string]*Mux),
