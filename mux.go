@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	options = 1 << iota
+	options = iota
 	get
 	head
 	post
@@ -44,13 +44,15 @@ var RecoveryContextKey = &contextKey{"recovery"}
 
 // Mux is an HTTP request multiplexer.
 type Mux struct {
-	mut         sync.RWMutex
-	prefixes    map[string]*prefix
-	middlewares []http.Handler
-	recovery    http.Handler
-	notFound    http.Handler
-	group       string
-	groups      map[string]*Mux
+	mut      sync.RWMutex
+	prefixes map[string]*prefix
+	group    string
+	groups   map[string]*Mux
+	context  struct {
+		middlewares []http.Handler
+		recovery    http.Handler
+		notFound    http.Handler
+	}
 }
 
 type prefix struct {
@@ -60,24 +62,15 @@ type prefix struct {
 
 // Entry represents an HTTP HandlerFunc entry.
 type Entry struct {
-	handler http.Handler
-	key     string
-	match   []string
-	params  map[string]string
-	method  int
-	get     http.Handler
-	post    http.Handler
-	put     http.Handler
-	delete  http.Handler
-	patch   http.Handler
-	head    http.Handler
-	options http.Handler
-	trace   http.Handler
-	connect http.Handler
+	handler  http.Handler
+	handlers [9]http.Handler
+	key      string
+	match    []string
+	params   map[string]string
 }
 
-// NewMux returns a new Mux.
-func NewMux() *Mux {
+// New returns a new Mux.
+func New() *Mux {
 	m := &Mux{
 		prefixes: make(map[string]*prefix),
 		groups:   make(map[string]*Mux),
@@ -105,8 +98,8 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveEntry(entry, w, r)
 		return
 	}
-	if m.notFound != nil {
-		m.notFound.ServeHTTP(w, r)
+	if m.context.notFound != nil {
+		m.context.notFound.ServeHTTP(w, r)
 		return
 	}
 	http.Error(w, "404 Not Found : "+r.URL.String(), http.StatusNotFound)
@@ -125,26 +118,26 @@ func (m *Mux) searchEntry(path string, w http.ResponseWriter, r *http.Request) *
 }
 
 func (m *Mux) serveEntry(entry *Entry, w http.ResponseWriter, r *http.Request) {
-	if entry.method == 0 {
+	if r.Method == "GET" && entry.handlers[get] != nil {
+		m.serveHandler(entry.handlers[get], w, r)
+	} else if r.Method == "POST" && entry.handlers[post] != nil {
+		m.serveHandler(entry.handlers[post], w, r)
+	} else if r.Method == "PUT" && entry.handlers[put] != nil {
+		m.serveHandler(entry.handlers[put], w, r)
+	} else if r.Method == "DELETE" && entry.handlers[delete] != nil {
+		m.serveHandler(entry.handlers[delete], w, r)
+	} else if r.Method == "PATCH" && entry.handlers[patch] != nil {
+		m.serveHandler(entry.handlers[patch], w, r)
+	} else if r.Method == "HEAD" && entry.handlers[head] != nil {
+		m.serveHandler(entry.handlers[head], w, r)
+	} else if r.Method == "OPTIONS" && entry.handlers[options] != nil {
+		m.serveHandler(entry.handlers[options], w, r)
+	} else if r.Method == "TRACE" && entry.handlers[trace] != nil {
+		m.serveHandler(entry.handlers[trace], w, r)
+	} else if r.Method == "CONNECT" && entry.handlers[connect] != nil {
+		m.serveHandler(entry.handlers[connect], w, r)
+	} else {
 		m.serveHandler(entry.handler, w, r)
-	} else if r.Method == "GET" && entry.method&get > 0 {
-		m.serveHandler(entry.get, w, r)
-	} else if r.Method == "POST" && entry.method&post > 0 {
-		m.serveHandler(entry.post, w, r)
-	} else if r.Method == "PUT" && entry.method&put > 0 {
-		m.serveHandler(entry.put, w, r)
-	} else if r.Method == "DELETE" && entry.method&delete > 0 {
-		m.serveHandler(entry.delete, w, r)
-	} else if r.Method == "PATCH" && entry.method&patch > 0 {
-		m.serveHandler(entry.patch, w, r)
-	} else if r.Method == "HEAD" && entry.method&head > 0 {
-		m.serveHandler(entry.head, w, r)
-	} else if r.Method == "OPTIONS" && entry.method&options > 0 {
-		m.serveHandler(entry.options, w, r)
-	} else if r.Method == "TRACE" && entry.method&trace > 0 {
-		m.serveHandler(entry.trace, w, r)
-	} else if r.Method == "CONNECT" && entry.method&connect > 0 {
-		m.serveHandler(entry.connect, w, r)
 	}
 }
 
@@ -158,11 +151,11 @@ func Recovery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Mux) serveHandler(handler http.Handler, w http.ResponseWriter, r *http.Request) {
-	if m.recovery != nil {
+	if m.context.recovery != nil {
 		defer func() {
 			if err := recover(); err != nil {
 				ctx := context.WithValue(r.Context(), RecoveryContextKey, err)
-				m.recovery.ServeHTTP(w, r.WithContext(ctx))
+				m.context.recovery.ServeHTTP(w, r.WithContext(ctx))
 			}
 		}()
 	}
@@ -229,7 +222,7 @@ func (m *Mux) Group(group string, f func(m *Mux)) {
 	if _, ok := m.groups[group]; ok {
 		panic(ErrGroupExisted)
 	}
-	groupMux.middlewares = m.middlewares
+	groupMux.context = m.context
 	m.groups[group] = groupMux
 }
 
@@ -237,25 +230,25 @@ func (m *Mux) Group(group string, f func(m *Mux)) {
 func (m *Mux) NotFound(handler http.HandlerFunc) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
-	m.notFound = handler
+	m.context.notFound = handler
 }
 
 // Recovery registers a recovery handler function to the Mux.
 func (m *Mux) Recovery(handler http.HandlerFunc) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
-	m.recovery = handler
+	m.context.recovery = handler
 }
 
 // Use uses middleware.
 func (m *Mux) Use(handler http.HandlerFunc) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
-	m.middlewares = append(m.middlewares, handler)
+	m.context.middlewares = append(m.context.middlewares, handler)
 }
 
 func (m *Mux) middleware(w http.ResponseWriter, r *http.Request) {
-	for _, handler := range m.middlewares {
+	for _, handler := range m.context.middlewares {
 		handler.ServeHTTP(w, r)
 	}
 }
@@ -265,7 +258,6 @@ func (m *Mux) Params(r *http.Request) map[string]string {
 	params := make(map[string]string)
 	path := m.replace(r.URL.Path)
 	m.mut.RLock()
-	defer m.mut.RUnlock()
 	if prefix, key, ok := m.matchParams(path); ok {
 		if entry, ok := m.prefixes[prefix].m[key]; ok &&
 			len(entry.match) > 0 && len(path) > len(prefix) {
@@ -279,6 +271,7 @@ func (m *Mux) Params(r *http.Request) map[string]string {
 			}
 		}
 	}
+	m.mut.RUnlock()
 	return params
 }
 
@@ -356,64 +349,55 @@ func (m *Mux) replace(s string) string {
 
 // GET adds a GET HTTP method to the entry.
 func (entry *Entry) GET() *Entry {
-	entry.method |= get
-	entry.get = entry.handler
+	entry.handlers[get] = entry.handler
 	return entry
 }
 
 // POST adds a POST HTTP method to the entry.
 func (entry *Entry) POST() *Entry {
-	entry.method |= post
-	entry.post = entry.handler
+	entry.handlers[post] = entry.handler
 	return entry
 }
 
 // PUT adds a PUT HTTP method to the entry.
 func (entry *Entry) PUT() *Entry {
-	entry.method |= put
-	entry.put = entry.handler
+	entry.handlers[put] = entry.handler
 	return entry
 }
 
 // DELETE adds a DELETE HTTP method to the entry.
 func (entry *Entry) DELETE() *Entry {
-	entry.method |= delete
-	entry.delete = entry.handler
+	entry.handlers[delete] = entry.handler
 	return entry
 }
 
 // PATCH adds a PATCH HTTP method to the entry.
 func (entry *Entry) PATCH() *Entry {
-	entry.method |= patch
-	entry.patch = entry.handler
+	entry.handlers[patch] = entry.handler
 	return entry
 }
 
 // HEAD adds a HEAD HTTP method to the entry.
 func (entry *Entry) HEAD() *Entry {
-	entry.method |= head
-	entry.head = entry.handler
+	entry.handlers[head] = entry.handler
 	return entry
 }
 
 // OPTIONS adds a OPTIONS HTTP method to the entry.
 func (entry *Entry) OPTIONS() *Entry {
-	entry.method |= options
-	entry.options = entry.handler
+	entry.handlers[options] = entry.handler
 	return entry
 }
 
 // TRACE adds a TRACE HTTP method to the entry.
 func (entry *Entry) TRACE() *Entry {
-	entry.method |= trace
-	entry.trace = entry.handler
+	entry.handlers[trace] = entry.handler
 	return entry
 }
 
 // CONNECT adds a CONNECT HTTP method to the entry.
 func (entry *Entry) CONNECT() *Entry {
-	entry.method |= connect
-	entry.connect = entry.handler
+	entry.handlers[connect] = entry.handler
 	return entry
 }
 
